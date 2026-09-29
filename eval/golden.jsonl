@@ -1,0 +1,14 @@
+{"question": "How many days of annual leave do I get per year?", "answerable": true, "source": "leave_policy.md", "evidence": "24 days", "must_contain": ["24"]}
+{"question": "How many days can I carry over and when do they expire?", "answerable": true, "source": "leave_policy.md", "evidence": "5 days", "must_contain": ["5", "March 31"]}
+{"question": "When do I need a medical certificate for sick leave?", "answerable": true, "source": "leave_policy.md", "evidence": "more than 2 consecutive days", "must_contain": ["2"]}
+{"question": "How long is parental leave for the primary caregiver?", "answerable": true, "source": "leave_policy.md", "evidence": "26 weeks", "must_contain": ["26"]}
+{"question": "What is the daily meal limit when travelling?", "answerable": true, "source": "expenses.md", "evidence": "1,500 INR", "must_contain": ["1,500"]}
+{"question": "What is the hotel cap per night in metro cities?", "answerable": true, "source": "expenses.md", "evidence": "8,000 INR", "must_contain": ["8,000"]}
+{"question": "Within how many days must expense claims be submitted?", "answerable": true, "source": "expenses.md", "evidence": "30 days", "must_contain": ["30"]}
+{"question": "How many days a week must I be in the office?", "answerable": true, "source": "remote_work.md", "evidence": "3 days per week", "must_contain": ["3"]}
+{"question": "How much is the home office stipend?", "answerable": true, "source": "remote_work.md", "evidence": "15,000 INR", "must_contain": ["15,000"]}
+{"question": "What is the sum insured on the health insurance?", "answerable": true, "source": "benefits.md", "evidence": "5 lakh", "must_contain": ["5 lakh"]}
+{"question": "How much is the yearly learning budget?", "answerable": true, "source": "benefits.md", "evidence": "40,000 INR", "must_contain": ["40,000"]}
+{"question": "Above what value must a gift be declared?", "answerable": true, "source": "conduct.md", "evidence": "3,000 INR", "must_contain": ["3,000"]}
+{"question": "Does the company provide a company car?", "answerable": false}
+{"question": "What is on the Friday cafeteria menu?", "answerable": false}
