@@ -2,6 +2,7 @@
 
 - **Status:** Draft v1
 - **Date:** 2026-09-28
+- **Author:** Prakhar
 
 ## Context
 Policy answers hinge on exact numbers and terms ("3,000 INR", "March 31") and on paraphrase ("time off when ill"). Pure dense retrieval blurs the former; pure BM25 misses the latter. Unanswerable questions must not reach the model as an invitation to improvise.

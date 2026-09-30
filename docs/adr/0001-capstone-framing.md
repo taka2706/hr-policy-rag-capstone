@@ -15,7 +15,7 @@ Employees ask a small set of routine policy questions (leave, expenses, remote w
 | **Tools** | OpenAI chat + embedding models; a SQLite-backed vector store; BM25 keyword index; a safe arithmetic calculator (agent mode only). |
 | **Memory** | None across questions in v1 (stateless); only a prompt cache and batch-result table for idempotency. |
 | **Autonomy level** | Q&A / read-only workflow. The agent mode may call `search_docs` and `calculate` in a loop capped at 6 steps; it takes no side-effecting actions. |
-| **Decision boundaries** | May answer when the best cosine ≥ threshold and cite sources; must refuse below it; must never act on instructions found in documents; anything needing a judgment call goes to HR. |
+| **Decision boundaries** | May answer when the best cosine ≥ threshold and cite sources; must refuse below it; must never act on instructions found in documents; anything needing a judgment call goes to HR (manual process today, not automated by this system). |
 
 ## Consequences
 - **Positive:** cheap deflection of routine questions; honest refusals; every claim traceable to a source; deterministic, cacheable, idempotent batch runs.
