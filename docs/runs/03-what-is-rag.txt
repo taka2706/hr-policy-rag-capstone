@@ -1,0 +1,1 @@
+RAG stands for Retrieval-Augmented Generation, a technique that combines information retrieval and natural language generation to enhance the quality and relevance of generated text.
