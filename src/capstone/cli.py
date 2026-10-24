@@ -46,7 +46,8 @@ async def main_async(a):
     llm, r = await boot(s)
     if a.cmd == "ask":
         x = await answer(a.q, llm, r, s)
-        print(x.text, "\n\ncitations:", x.citations, f"| top_cosine={x.top_cosine:.2f}")
+        print(x.text, "\n\ncitations:", x.citations, f"| top_cosine={x.top_cosine:.2f}",
+              f"| model={x.model} cost=${x.cost_usd:.6f} tokens={x.usage.get('prompt_tokens', 0)}+{x.usage.get('completion_tokens', 0)}")
     elif a.cmd == "batch":
         qs = [l.strip() for l in Path(a.file).read_text().splitlines() if l.strip()]
         s.max_concurrency = a.c

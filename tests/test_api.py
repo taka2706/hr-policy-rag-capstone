@@ -28,16 +28,25 @@ class StubLLM:
     def __init__(self, deltas=("24 days ", "[1]"), fail=False):
         self.deltas, self.fail, self.stats = deltas, fail, {"calls": 0}
 
-    async def chat(self, messages, **k):
+    async def chat(self, messages, tools=None, **k):
         if self.fail:
             raise RuntimeError("llm down")
-        return {"role": "assistant", "content": "".join(self.deltas)}
+        text = "".join(self.deltas)
+        usage = {"model": "gpt-4o-mini", "prompt_tokens": 100, "completion_tokens": 10, "cost_usd": 0.000021}
+        if tools:
+            args = {"answer": text, "cited_sources": [1], "refused": False}
+            return {"role": "assistant", "content": None, "usage": usage, "tool_calls": [{
+                "id": "c", "type": "function",
+                "function": {"name": "submit_answer", "arguments": json.dumps(args)}}]}
+        return {"role": "assistant", "content": text, "usage": usage}
 
-    async def chat_stream(self, messages, **k):
+    async def chat_stream(self, messages, usage_out=None, **k):
         for d in self.deltas:
             yield d
         if self.fail:
             raise RuntimeError("llm down")
+        if usage_out is not None:
+            usage_out.update(model="gpt-4o-mini", prompt_tokens=100, completion_tokens=10, cost_usd=0.000021)
 
 
 def client(llm=None, retriever=None, tmp=None):
@@ -68,7 +77,7 @@ async def test_health():
     async with client() as c:
         r = await c.get("/health")
     assert r.status_code == 200 and r.json() == {
-        "status": "ok", "api_version": "1.0", "backend": "fake", "chunks": 3}
+        "status": "ok", "schema_version": "v1", "api_version": "1.0", "backend": "fake", "chunks": 3}
 
 
 async def test_ask_streams_and_ends_with_final():
@@ -77,13 +86,15 @@ async def test_ask_streams_and_ends_with_final():
     ev = events(r)
     assert r.headers["content-type"].startswith("application/x-ndjson")
     assert [e["type"] for e in ev] == ["token", "token", "final"]
-    assert ev[-1]["data"] == {"answer": "24 days [1]", "citations": ["doc.md#1"], "refused": False}
+    d = ev[-1]["data"]
+    assert (d["schema_version"], d["answer"], d["citations"], d["refused"]) == ("v1", "24 days [1]", ["doc.md#1"], False)
+    assert d["usage"]["model"] == "gpt-4o-mini" and d["usage"]["cost_usd"] > 0
 
 
 async def test_ask_response_does_not_leak_internals():
     async with client() as c:
         ev = events(await c.post("/ask", json={"question": "x"}))
-    assert set(ev[-1]["data"]) == {"answer", "citations", "refused"}
+    assert set(ev[-1]["data"]) == {"schema_version", "answer", "citations", "refused", "usage"}
 
 
 @pytest.mark.parametrize("body", [{}, {"question": ""}, {"question": "   "}, {"question": "a" * 1001},
@@ -119,3 +130,27 @@ async def test_ask_batched_failure_is_dead_lettered(tmp_path):
 async def test_ask_batched_rejects_invalid(body):
     async with client() as c:
         assert (await c.post("/ask_batched", json=body)).status_code == 422
+
+
+# ---- Week 4: structured output, schema versioning, cost ----
+async def test_structured_answer_via_tool_call_carries_usage():
+    a = await rag.answer("q", StubLLM(), StubRetriever([hit()]), get_settings())
+    assert a.text == "24 days [1]" and a.citations == ["doc.md#1"]
+    assert a.model == "gpt-4o-mini" and a.cost_usd > 0
+
+
+async def test_malformed_tool_output_is_retried_then_raises():
+    class Bad(StubLLM):
+        calls = 0
+        async def chat(self, messages, tools=None, **k):
+            Bad.calls += 1
+            return {"role": "assistant", "content": "free text, no tool call", "usage": {"cost_usd": 0.001}}
+    with pytest.raises(ValueError):
+        await rag.answer("q", Bad(), StubRetriever([hit()]), get_settings(), retries=1)
+    assert Bad.calls == 2
+
+
+async def test_batch_reports_model_and_cost(tmp_path):
+    async with client(tmp=tmp_path) as c:
+        b = (await c.post("/ask_batched", json={"questions": ["one?"]})).json()
+    assert b["results"][0]["model"] == "gpt-4o-mini" and b["total_cost_usd"] > 0

@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from .config import Settings
+from .cost import UsageLog, usage_dict
 
 # ---------- pacing ----------
 class RateLimiter:
@@ -92,6 +93,12 @@ def fake_embed(texts: list[str], dim: int = 2048) -> np.ndarray:
 def fake_chat(messages, tools) -> dict:
     if any(m["role"] == "system" and "JUDGE" in (m["content"] or "") for m in messages):
         return {"role": "assistant", "content": "YES"}
+    if tools and tools[0]["function"]["name"] == "submit_answer":
+        plain = fake_chat(messages, None)["content"] or ""
+        refused = plain.startswith("I don't know")
+        return {"role": "assistant", "content": None, "tool_calls": [{
+            "id": "call_1", "type": "function", "function": {"name": "submit_answer", "arguments": json.dumps(
+                {"answer": plain, "cited_sources": [] if refused else [1], "refused": refused})}}]}
     if tools:
         tool_msgs = [m for m in messages if m["role"] == "tool"]
         if not tool_msgs:
@@ -112,59 +119,83 @@ class LLM:
     def __init__(self, s: Settings, cache: Cache | None = None):
         self.s, self.cache = s, cache
         self.limiter = RateLimiter(s.rpm)
-        self.stats = {"calls": 0, "cache_hits": 0, "prompt_tokens": 0, "completion_tokens": 0}
+        self.stats = {"calls": 0, "cache_hits": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0.0}
+        self.usage_log = UsageLog(s.db_path) if cache else None
         self.client = None
         if s.backend == "openai":
             from openai import AsyncOpenAI
             self.client = AsyncOpenAI(max_retries=0, timeout=60)   # we own retries
 
-    async def chat(self, messages: list[dict], temperature: float = 0.0, tools: list | None = None) -> dict:
+    async def chat(self, messages: list[dict], temperature: float = 0.0, tools: list | None = None,
+                   tool_choice=None) -> dict:
+        """Returns the assistant message plus a `usage` entry (model, tokens, cost_usd) from the real API response."""
         key = hashlib.sha256(json.dumps([self.s.chat_model, messages, temperature, bool(tools)],
                                         sort_keys=True).encode()).hexdigest()
         if self.cache and not tools:
             hit = self.cache.get(key)
             if hit:
                 self.stats["cache_hits"] += 1
-                return hit
+                return {**hit, "usage": usage_dict(self.s.chat_model, 0, 0)}   # cached: free
+        t0 = time.monotonic()
         if self.s.backend == "fake":
             out = fake_chat(messages, tools)
+            out["usage"] = usage_dict(self.s.chat_model, sum(len(tokenize(m["content"] or "")) for m in messages),
+                                      len(tokenize(out["content"] or json.dumps(out.get("tool_calls", "")))))
         else:
             async def call():
                 await self.limiter.acquire()
                 kw = dict(model=self.s.chat_model, messages=messages, temperature=temperature)
                 if tools:
                     kw["tools"] = tools
+                    if tool_choice:
+                        kw["tool_choice"] = tool_choice
                 return await self.client.chat.completions.create(**kw)
             r = await with_retries(call)
-            self.stats["prompt_tokens"] += r.usage.prompt_tokens
-            self.stats["completion_tokens"] += r.usage.completion_tokens
             m = r.choices[0].message
-            out = {"role": "assistant", "content": m.content}
+            out = {"role": "assistant", "content": m.content,
+                   "usage": usage_dict(self.s.chat_model, r.usage.prompt_tokens, r.usage.completion_tokens)}
             if m.tool_calls:
                 out["tool_calls"] = [{"id": t.id, "type": "function",
                                       "function": {"name": t.function.name, "arguments": t.function.arguments}}
                                      for t in m.tool_calls]
-        self.stats["calls"] += 1
+        self._account(out["usage"], "chat", t0)
         if self.cache and not tools:
-            self.cache.set(key, out)
+            self.cache.set(key, {k: v for k, v in out.items() if k != "usage"})
         return out
 
-    async def chat_stream(self, messages: list[dict], temperature: float = 0.0):
-        """Async generator yielding text deltas. Not cached (streams are for UX, not replay)."""
+    def _account(self, u: dict, kind: str, t0: float):
+        self.stats["calls"] += 1
+        self.stats["prompt_tokens"] += u["prompt_tokens"]
+        self.stats["completion_tokens"] += u["completion_tokens"]
+        self.stats["cost_usd"] += u["cost_usd"]
+        if self.usage_log:
+            self.usage_log.record(u, kind, int((time.monotonic() - t0) * 1000))
+
+    async def chat_stream(self, messages: list[dict], temperature: float = 0.0, usage_out: dict | None = None):
+        """Async generator yielding text deltas. Not cached (streams are for UX, not replay).
+        If `usage_out` is given it is filled with real token usage/cost once the stream ends."""
+        t0 = time.monotonic()
         if self.s.backend == "fake":
             text = fake_chat(messages, None)["content"] or ""
             for w in re.findall(r"\S+\s*", text):
                 await asyncio.sleep(0)
                 yield w
-            self.stats["calls"] += 1
-            return
-        await self.limiter.acquire()
-        stream = await self.client.chat.completions.create(
-            model=self.s.chat_model, messages=messages, temperature=temperature, stream=True)
-        async for ev in stream:
-            if ev.choices and ev.choices[0].delta.content:
-                yield ev.choices[0].delta.content
-        self.stats["calls"] += 1
+            u = usage_dict(self.s.chat_model, sum(len(tokenize(m["content"] or "")) for m in messages),
+                           len(tokenize(text)))
+        else:
+            await self.limiter.acquire()
+            stream = await self.client.chat.completions.create(
+                model=self.s.chat_model, messages=messages, temperature=temperature, stream=True,
+                stream_options={"include_usage": True})      # final chunk carries real usage
+            u = usage_dict(self.s.chat_model, 0, 0)
+            async for ev in stream:
+                if ev.usage:
+                    u = usage_dict(self.s.chat_model, ev.usage.prompt_tokens, ev.usage.completion_tokens)
+                if ev.choices and ev.choices[0].delta.content:
+                    yield ev.choices[0].delta.content
+        self._account(u, "stream", t0)
+        if usage_out is not None:
+            usage_out.update(u)
 
     async def embed(self, texts: list[str]) -> np.ndarray:
         if self.s.backend == "fake":

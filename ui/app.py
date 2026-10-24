@@ -34,6 +34,9 @@ if st.button("Ask") and q.strip():
                     st.error(ev["data"])
         box.markdown(text)
         if final:
+            u = final.get("usage")
+            if u:
+                st.caption(f"{u['model']} · {u['prompt_tokens']}+{u['completion_tokens']} tokens · ${u['cost_usd']:.6f} · schema {final['schema_version']}")
             if final["refused"]:
                 st.warning("No supporting policy text found.")
             elif final["citations"]:

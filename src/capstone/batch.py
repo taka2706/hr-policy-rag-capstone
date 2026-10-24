@@ -19,6 +19,10 @@ class Result(BaseModel):
     status: str = "ok"              # ok | failed
     error: str | None = None
     latency_ms: int = 0
+    model: str | None = None
+    cost_usd: float = 0.0           # real usage-based cost (replays return the stored value)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 def make_qid(q: str, s) -> str:
@@ -40,6 +44,9 @@ async def run_batch(questions: list[str], llm, retriever, s) -> list[Result]:
             try:
                 a = await rag.answer(q, llm, retriever, s)
                 r = Result(qid=qid, question=q, answer=a.text, citations=a.citations, refused=a.refused,
+                           model=a.model or s.chat_model, cost_usd=a.cost_usd,
+                           prompt_tokens=a.usage.get("prompt_tokens", 0),
+                           completion_tokens=a.usage.get("completion_tokens", 0),
                            latency_ms=int((time.monotonic() - t) * 1000))
             except Exception as e:                       # dead-letter, don't kill the batch
                 r = Result(qid=qid, question=q, status="failed", error=repr(e))

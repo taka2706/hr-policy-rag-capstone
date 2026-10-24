@@ -104,3 +104,30 @@ def test_rate_limiter_spaces_calls():
         for _ in range(4): await rl.acquire()
         return time.monotonic() - t
     assert asyncio.run(go()) >= 0.28
+
+
+# ---- Week 4 ----
+def test_cost_from_usage():
+    from capstone.cost import cost_usd
+    assert cost_usd("gpt-4o-mini", 1_000_000, 1_000_000) == pytest.approx(0.75)
+    assert cost_usd("unknown-model", 10, 10) == 0.0
+
+
+def test_answer_schema_v1_validation():
+    from pydantic import ValidationError
+    from capstone.schemas import Answer
+    assert Answer(answer="x").schema_version == "v1"
+    with pytest.raises(ValidationError):
+        Answer(answer="")
+    with pytest.raises(ValidationError):
+        Answer(answer="x", schema_version="v2")
+
+
+def test_fake_backend_structured_answer_and_usage_persisted(env):
+    s, _, r = env
+    from capstone.llm import Cache
+    llm = LLM(s, Cache(s.db_path))
+    a = asyncio.run(answer("How many days of annual leave do I get per year?", llm, r, s))
+    assert a.model == s.chat_model and a.cost_usd > 0 and not a.refused
+    rows = llm.usage_log.totals()
+    assert rows and rows[0][0] == s.chat_model and rows[0][4] > 0

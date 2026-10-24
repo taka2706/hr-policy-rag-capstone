@@ -20,10 +20,29 @@ class AskRequest(BaseModel):
     _v = field_validator("question")(_clean)
 
 
-class AskResponse(BaseModel):
-    answer: str
+SCHEMA_VERSION = "v1"
+
+
+class Usage(BaseModel):
+    model: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cost_usd: float = 0.0
+    latency_ms: int = 0
+
+
+class Answer(BaseModel):
+    """Structured answer returned by the model via tool-calling (submit_answer) and validated here.
+    `schema_version` is fixed at v1: adding optional fields keeps v1, renaming/removing needs v2."""
+    schema_version: Literal["v1"] = SCHEMA_VERSION
+    answer: str = Field(min_length=1)
     citations: list[str] = []
     refused: bool = False
+
+
+class AskResponse(Answer):
+    """Wire format of /ask `final` and of Answer-shaped results; adds optional usage (additive => still v1)."""
+    usage: Usage | None = None
 
 
 class BatchRequest(BaseModel):
@@ -48,16 +67,20 @@ class BatchItem(BaseModel):
     citations: list[str] = []
     refused: bool = False
     error: str | None = None
+    model: str | None = None
+    cost_usd: float = 0.0
 
 
 class BatchResponse(BaseModel):
     results: list[BatchItem]
     ok: int
     failed: int
+    total_cost_usd: float = 0.0
 
 
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
+    schema_version: Literal["v1"] = SCHEMA_VERSION
     api_version: str
     backend: str
     chunks: int

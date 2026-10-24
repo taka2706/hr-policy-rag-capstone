@@ -19,7 +19,7 @@ from .config import Settings, get_settings
 from .llm import LLM, Cache
 from .retrieve import Retriever
 from .schemas import (AskRequest, AskResponse, BatchItem, BatchRequest, BatchResponse,
-                      HealthResponse)
+                      HealthResponse, Usage)
 from .store import Store
 
 API_VERSION = "1.0"
@@ -59,7 +59,8 @@ def _line(type_: str, data) -> str:
 
 
 def to_response(a: rag.Answer) -> AskResponse:
-    return AskResponse(answer=a.text, citations=a.citations, refused=a.refused)
+    return AskResponse(answer=a.text, citations=a.citations, refused=a.refused,
+                       usage=Usage(**a.usage) if a.usage.get("model") else None)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -89,6 +90,7 @@ async def ask_batched(req: BatchRequest, p: Pipeline = Depends(get_pipeline)):
     except Exception as e:
         raise HTTPException(502, f"batch failed: {type(e).__name__}")
     items = [BatchItem(question=r.question, status=r.status, answer=r.answer, citations=r.citations,
-                       refused=r.refused, error=r.error) for r in res]
+                       refused=r.refused, error=r.error, model=r.model, cost_usd=r.cost_usd) for r in res]
     ok = sum(i.status == "ok" for i in items)
-    return BatchResponse(results=items, ok=ok, failed=len(items) - ok)
+    return BatchResponse(results=items, ok=ok, failed=len(items) - ok,
+                         total_cost_usd=round(sum(i.cost_usd for i in items), 6))

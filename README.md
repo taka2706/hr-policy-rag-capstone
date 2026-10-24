@@ -39,3 +39,6 @@ make test     # unit tests, all mocked/offline
 make stress   # stress test against the running API -> docs/stress_results.md
 ```
 Contract and decisions: `docs/adr/0003-api-contract-and-streaming.md`.
+
+## Week 4: structured output + cost
+`make compare` runs two models on the golden set (-> `docs/model_comparison.md`). Answers carry `schema_version: "v1"` and real usage/cost; see `docs/adr/0004-*`. Notebook: `week4_lab.ipynb`.
