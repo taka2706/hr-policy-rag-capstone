@@ -149,6 +149,23 @@ class LLM:
             self.cache.set(key, out)
         return out
 
+    async def chat_stream(self, messages: list[dict], temperature: float = 0.0):
+        """Async generator yielding text deltas. Not cached (streams are for UX, not replay)."""
+        if self.s.backend == "fake":
+            text = fake_chat(messages, None)["content"] or ""
+            for w in re.findall(r"\S+\s*", text):
+                await asyncio.sleep(0)
+                yield w
+            self.stats["calls"] += 1
+            return
+        await self.limiter.acquire()
+        stream = await self.client.chat.completions.create(
+            model=self.s.chat_model, messages=messages, temperature=temperature, stream=True)
+        async for ev in stream:
+            if ev.choices and ev.choices[0].delta.content:
+                yield ev.choices[0].delta.content
+        self.stats["calls"] += 1
+
     async def embed(self, texts: list[str]) -> np.ndarray:
         if self.s.backend == "fake":
             v = fake_embed(texts)

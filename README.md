@@ -30,3 +30,12 @@ make runs                       # W1 evidence: 3 saved runs -> docs/runs/
 - [x] `hello_llm.py`
 - [ ] Run `make runs` with your real key (saves 3 outputs)
 - [x] ADR-0001 (edit to match your corpus)
+
+## Week 3: API + UI
+```bash
+make api      # FastAPI on :8000  (POST /ask streams NDJSON, POST /ask_batched, GET /health)
+make ui       # Streamlit UI (needs the API running)
+make test     # unit tests, all mocked/offline
+make stress   # stress test against the running API -> docs/stress_results.md
+```
+Contract and decisions: `docs/adr/0003-api-contract-and-streaming.md`.

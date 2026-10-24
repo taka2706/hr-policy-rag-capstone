@@ -4,3 +4,8 @@ pydantic>=2
 numpy
 pypdf
 pytest
+fastapi
+uvicorn
+streamlit
+httpx
+pytest-asyncio

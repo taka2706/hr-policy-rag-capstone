@@ -28,6 +28,27 @@ def build_prompt(question: str, hits) -> str:
     return f"<context>\n{ctx}\n</context>\n\nQuestion: {question}"
 
 
+def _finish(text: str, hits, top_cos: float) -> Answer:
+    nums = sorted({int(n) for n in re.findall(r"\[(\d+)\]", text)})
+    cites = [hits[n - 1].chunk.id for n in nums if 1 <= n <= len(hits)]
+    return Answer(text, cites, text.startswith("I don't know"), top_cos, hits)
+
+
+async def answer_stream(question: str, llm, retriever, s):
+    """Async generator: yields ("token", str) deltas, then ("final", Answer)."""
+    hits, top_cos = await retriever.search(question, k=s.top_k)
+    if not hits or top_cos < s.min_score:
+        yield "token", IDK
+        yield "final", Answer(IDK, [], True, top_cos, hits)
+        return
+    parts: list[str] = []
+    async for d in llm.chat_stream([{"role": "system", "content": SYSTEM},
+                                    {"role": "user", "content": build_prompt(question, hits)}]):
+        parts.append(d)
+        yield "token", d
+    yield "final", _finish("".join(parts).strip(), hits, top_cos)
+
+
 async def answer(question: str, llm, retriever, s) -> Answer:
     hits, top_cos = await retriever.search(question, k=s.top_k)
     # Gate BEFORE the LLM: if nothing is close, don't let it improvise. Also saves a call.
