@@ -91,6 +91,9 @@ def fake_embed(texts: list[str], dim: int = 2048) -> np.ndarray:
 
 
 def fake_chat(messages, tools) -> dict:
+    if any(m["role"] == "system" and "RUBRIC_JUDGE" in (m["content"] or "") for m in messages):
+        return {"role": "assistant", "content": json.dumps(
+            {"accuracy": 4, "grounding": 4, "completeness": 4, "conciseness": 4, "refusal_correct": True, "reason": "fake judge"})}
     if any(m["role"] == "system" and "JUDGE" in (m["content"] or "") for m in messages):
         return {"role": "assistant", "content": "YES"}
     if tools and tools[0]["function"]["name"] == "submit_answer":

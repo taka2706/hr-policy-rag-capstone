@@ -131,3 +131,23 @@ def test_fake_backend_structured_answer_and_usage_persisted(env):
     assert a.model == s.chat_model and a.cost_usd > 0 and not a.refused
     rows = llm.usage_log.totals()
     assert rows and rows[0][0] == s.chat_model and rows[0][4] > 0
+
+
+def test_judge_parse_and_golden_v2():
+    from capstone.judge import parse_verdict
+    v = parse_verdict('x {"accuracy":5,"grounding":4,"completeness":9,"conciseness":3,"refusal_correct":true,"reason":"ok"}')
+    assert v["completeness"] == 5 and v["refusal_correct"]
+    assert parse_verdict("garbage")["accuracy"] == 1
+    g = load_golden("eval/golden_v2.jsonl")
+    assert {x["category"] for x in g} == {"typical", "challenging", "edge"}
+    assert all(x["reference"] for x in g)
+
+
+def test_prompt_variants_and_fake_judge(env):
+    from capstone.judge import judge
+    from capstone.prompts import VARIANTS
+    s, llm, r = env
+    g = load_golden("eval/golden_v2.jsonl")[0]
+    for system in VARIANTS.values():
+        a = asyncio.run(answer(g["question"], llm, r, s, system=system))
+        assert asyncio.run(judge(g, a, "", llm))["accuracy"] == 4

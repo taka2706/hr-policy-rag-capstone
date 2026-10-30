@@ -88,13 +88,13 @@ def _parse_tool_answer(msg: dict, hits) -> AnswerSchema:
     return AnswerSchema(answer=args["answer"].strip(), citations=cites, refused=bool(args.get("refused")))
 
 
-async def answer(question: str, llm, retriever, s, retries: int = 1) -> Answer:
+async def answer(question: str, llm, retriever, s, retries: int = 1, system: str = SYSTEM) -> Answer:
     """Structured path: forced tool call -> pydantic-validated Answer (schema v1); retries on malformed output."""
     hits, top_cos = await retriever.search(question, k=s.top_k)
     # Gate BEFORE the LLM: if nothing is close, don't let it improvise. Also saves a call.
     if not hits or top_cos < s.min_score:
         return Answer(IDK, [], True, top_cos, hits)
-    msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": build_prompt(question, hits)}]
+    msgs = [{"role": "system", "content": system}, {"role": "user", "content": build_prompt(question, hits)}]
     t0 = time.monotonic()
     total = {"prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0.0}
     for attempt in range(retries + 1):
